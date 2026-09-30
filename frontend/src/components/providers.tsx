@@ -8,6 +8,8 @@ import { ApiError } from "@/lib/api/client";
 
 function redirectIfUnauthorized(error: unknown) {
   if (error instanceof ApiError && error.isUnauthorized) {
+    // A full navigation (not router.push) so the route handler can clear the httpOnly cookie.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.assign("/auth/signout?reason=expired");
   }
 }

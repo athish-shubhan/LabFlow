@@ -1,5 +1,6 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import { unwrap, type ApiClient } from "@/lib/api/client";
+import type { ExperimentStatus } from "@/lib/api/types";
 
 // Query key hierarchy. Keys nest under their parent resource so a single
 // invalidateQueries({queryKey: keys.experiment(id)}) also refreshes that
@@ -8,6 +9,8 @@ export const keys = {
   projects: (orgId: string) => ["org", orgId, "projects"] as const,
   project: (projectId: string) => ["project", projectId] as const,
   projectExperiments: (projectId: string) => ["project", projectId, "experiments"] as const,
+  projectExperimentsByStatus: (projectId: string, status: ExperimentStatus | undefined) =>
+    ["project", projectId, "experiments", { status: status ?? null }] as const,
   experiment: (experimentId: string) => ["experiment", experimentId] as const,
   samples: (experimentId: string) => ["experiment", experimentId, "samples"] as const,
   analyticsAll: (experimentId: string) => ["experiment", experimentId, "analytics"] as const,
@@ -47,11 +50,16 @@ export const queries = {
       queryFn: () => unwrap(api.GET("/api/projects/{project_id}", { params: { path: { project_id: projectId } } })),
     }),
 
-  projectExperiments: (api: ApiClient, projectId: string) =>
+  projectExperiments: (api: ApiClient, projectId: string, status?: ExperimentStatus) =>
     queryOptions({
-      queryKey: keys.projectExperiments(projectId),
+      queryKey: keys.projectExperimentsByStatus(projectId, status),
       queryFn: () =>
-        unwrap(api.GET("/api/projects/{project_id}/experiments", { params: { path: { project_id: projectId } } })),
+        unwrap(
+          api.GET("/api/projects/{project_id}/experiments", {
+            params: { path: { project_id: projectId }, query: { status } },
+          }),
+        ),
+      placeholderData: keepPreviousData,
     }),
 
   experiment: (api: ApiClient, experimentId: string) =>

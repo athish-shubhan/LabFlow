@@ -6,7 +6,7 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 export interface ApiClientOptions {
   baseUrl: string;
   headers?: Record<string, string>;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (input: Request) => Promise<Response>;
 }
 
 export function createApiClient({ baseUrl, headers, fetch }: ApiClientOptions) {

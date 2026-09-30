@@ -27,7 +27,7 @@ export default async function DashboardPage() {
       <PageHeader title="Dashboard" description={`Activity across all projects in ${data.organization.name}.`} />
 
       <section aria-label="Summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Projects" value={data.project_count} href="/projects" />
+        <StatTile label="Projects" value={data.project_count} href="/projects" detail="View all projects" />
         <StatTile
           label="Experiments"
           value={data.experiment_count}
@@ -61,11 +61,11 @@ export default async function DashboardPage() {
 
 function StatTile({ label, value, detail, href }: { label: string; value: number; detail?: string; href?: string }) {
   const body = (
-    <>
+    <div>
       <p className="text-sm text-muted-foreground">{label}</p>
       <p className="tabular mt-1 text-3xl font-semibold tracking-tight">{formatCount(value)}</p>
       {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
-    </>
+    </div>
   );
   return (
     <Card className="px-4 py-4">

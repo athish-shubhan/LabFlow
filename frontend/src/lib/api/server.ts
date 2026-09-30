@@ -22,7 +22,12 @@ export const requireSession = cache(async () => {
 /** Typed API client that calls the backend directly with the session's bearer token. */
 export const getServerApi = cache(async () => {
   const { token } = await requireSession();
-  return createApiClient({ baseUrl: backendUrl(), headers: { Authorization: `Bearer ${token}` } });
+  return createApiClient({
+    baseUrl: backendUrl(),
+    headers: { Authorization: `Bearer ${token}` },
+    // Per-user, frequently changing data: never use Next's fetch cache.
+    fetch: (input: Request) => fetch(input, { cache: "no-store" }),
+  });
 });
 
 /** One QueryClient per server request, used to prefetch data that client components hydrate. */
