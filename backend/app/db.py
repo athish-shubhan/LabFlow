@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 
-engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+# Pin the session time zone so timestamps always come back as UTC regardless of server config.
+engine = create_engine(get_settings().database_url, pool_pre_ping=True, connect_args={"options": "-c timezone=utc"})
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 

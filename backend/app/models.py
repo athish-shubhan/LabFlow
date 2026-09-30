@@ -135,9 +135,7 @@ class Sample(Base):
     experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     type: Mapped[str] = mapped_column(String(100))
-    status: Mapped[SampleStatus] = mapped_column(
-        _str_enum(SampleStatus, "sample_status"), default=SampleStatus.PENDING
-    )
+    status: Mapped[SampleStatus] = mapped_column(_str_enum(SampleStatus, "sample_status"), default=SampleStatus.PENDING)
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -155,10 +153,16 @@ class Measurement(Base):
 
 # Child counts exposed on list/detail responses, computed in the same SELECT.
 Project.experiment_count = column_property(
-    select(func.count(Experiment.id)).where(Experiment.project_id == Project.id).correlate_except(Experiment).scalar_subquery()
+    select(func.count(Experiment.id))
+    .where(Experiment.project_id == Project.id)
+    .correlate_except(Experiment)
+    .scalar_subquery()
 )
 Experiment.sample_count = column_property(
-    select(func.count(Sample.id)).where(Sample.experiment_id == Experiment.id).correlate_except(Sample).scalar_subquery()
+    select(func.count(Sample.id))
+    .where(Sample.experiment_id == Experiment.id)
+    .correlate_except(Sample)
+    .scalar_subquery()
 )
 Sample.measurement_count = column_property(
     select(func.count(Measurement.id))
