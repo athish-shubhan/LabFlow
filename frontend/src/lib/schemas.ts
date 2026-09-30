@@ -31,7 +31,7 @@ export const experimentFormSchema = z
     start_date: optionalDate,
     end_date: optionalDate,
   })
-  .refine((v) => !v.start_date || !v.end_date || v.end_date >= v.start_date, {
+  .refine((v) => !ISO_DATE.test(v.start_date) || !ISO_DATE.test(v.end_date) || v.end_date >= v.start_date, {
     // ISO yyyy-mm-dd strings compare correctly as strings.
     path: ["end_date"],
     message: "End date must be on or after the start date",
