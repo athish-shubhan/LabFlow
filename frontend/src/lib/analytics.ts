@@ -97,31 +97,34 @@ export function nearestPoint(points: readonly ChartPoint[], t: number): ChartPoi
   return after;
 }
 
-/** Y domain with a little headroom so lines don't touch the plot edges. */
-export function paddedDomain(panel: MetricPanel): [number, number] | undefined {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const s of panel.series) {
-    min = Math.min(min, s.stats.min);
-    max = Math.max(max, s.stats.max);
-  }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined;
-  const span = max - min || Math.abs(max) || 1;
-  const pad = span * 0.08;
-  return [niceFloor(min - pad), niceCeil(max + pad)];
-}
+const HOUR = 3_600_000;
+const TICK_STEPS_HOURS = [1, 2, 3, 6, 12, 24, 48, 168];
 
-function niceStep(v: number) {
-  const mag = 10 ** Math.floor(Math.log10(Math.abs(v) || 1));
-  return mag / 10;
-}
-function niceFloor(v: number) {
-  const step = niceStep(v);
-  return Math.floor(v / step) * step;
-}
-function niceCeil(v: number) {
-  const step = niceStep(v);
-  return Math.ceil(v / step) * step;
+/**
+ * Time-axis ticks on round local boundaries (whole hours, or local midnights for day
+ * steps), choosing the smallest step that yields at most `maxTicks` ticks. Recharts'
+ * default numeric ticks fall at arbitrary instants, which repeats day labels.
+ */
+export function timeTicks(min: number, max: number, maxTicks = 8): { ticks: number[]; stepHours: number } {
+  if (!(max > min)) return { ticks: Number.isFinite(min) ? [min] : [], stepHours: 1 };
+  const span = max - min;
+  const stepHours = TICK_STEPS_HOURS.find((h) => span / (h * HOUR) <= maxTicks) ?? TICK_STEPS_HOURS.at(-1)!;
+  const d = new Date(min);
+  if (stepHours >= 24) {
+    d.setHours(0, 0, 0, 0);
+    if (d.getTime() < min) d.setDate(d.getDate() + 1);
+  } else {
+    d.setMinutes(0, 0, 0);
+    if (d.getTime() < min) d.setHours(d.getHours() + 1);
+    while (d.getHours() % stepHours !== 0) d.setHours(d.getHours() + 1);
+  }
+  const ticks: number[] = [];
+  while (d.getTime() <= max) {
+    ticks.push(d.getTime());
+    if (stepHours >= 24) d.setDate(d.getDate() + stepHours / 24); // calendar days: DST-safe
+    else d.setHours(d.getHours() + stepHours);
+  }
+  return { ticks, stepHours };
 }
 
 // ---- Date range filter ------------------------------------------------------------
@@ -152,4 +155,72 @@ function localDayBoundary(value: string, edge: "start" | "end"): Date | null {
   const date = edge === "start" ? new Date(y, mo, d, 0, 0, 0, 0) : new Date(y, mo, d, 23, 59, 59, 999);
   if (date.getFullYear() !== y || date.getMonth() !== mo || date.getDate() !== d) return null;
   return date;
+}
+
+// ---- URL <-> filter state ------------------------------------------------------------
+
+type SearchParamsLike = URLSearchParams | Record<string, string | string[] | undefined>;
+
+function getParam(params: SearchParamsLike, key: string): string | undefined {
+  if (params instanceof URLSearchParams) return params.get(key) ?? undefined;
+  const v = params[key];
+  return Array.isArray(v) ? v[0] : v;
+}
+
+/** Analytics filters as they live in the URL (shareable, survives reload). */
+export interface AnalyticsUrlState {
+  metric?: string;
+  /** undefined = all samples; [] = none selected */
+  samples?: string[];
+  from?: string; // yyyy-mm-dd
+  to?: string;
+}
+
+const METRIC_RE = /^[a-z][a-z0-9_]*$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function parseAnalyticsSearch(params: SearchParamsLike): AnalyticsUrlState {
+  const metric = getParam(params, "metric");
+  const samples = getParam(params, "samples");
+  const from = getParam(params, "from");
+  const to = getParam(params, "to");
+  return {
+    metric: metric && METRIC_RE.test(metric) ? metric : undefined,
+    samples: samples === undefined ? undefined : samples.split(",").filter((id) => UUID_RE.test(id)),
+    from: from && DATE_RE.test(from) ? from : undefined,
+    to: to && DATE_RE.test(to) ? to : undefined,
+  };
+}
+
+export function serializeAnalyticsSearch(state: AnalyticsUrlState): string {
+  const p = new URLSearchParams();
+  if (state.metric) p.set("metric", state.metric);
+  if (state.samples !== undefined) p.set("samples", state.samples.join(","));
+  if (state.from) p.set("from", state.from);
+  if (state.to) p.set("to", state.to);
+  const s = p.toString();
+  return s ? `?${s}` : "";
+}
+
+export type AnalyticsQueryResult =
+  | { ok: true; filters: { metric?: string; sampleIds?: string[]; from?: string; to?: string } }
+  | { ok: false; reason: "no-samples" | "invalid-range"; error: string };
+
+/** URL state -> the filters sent to the backend (and used in the query key). */
+export function toAnalyticsFilters(state: AnalyticsUrlState): AnalyticsQueryResult {
+  if (state.samples !== undefined && state.samples.length === 0) {
+    return { ok: false, reason: "no-samples", error: "Select at least one sample to plot." };
+  }
+  const range = toDateRangeParams({ from: state.from, to: state.to });
+  if (!range.ok) return { ok: false, reason: "invalid-range", error: range.error };
+  return {
+    ok: true,
+    filters: {
+      metric: state.metric,
+      sampleIds: state.samples ? [...state.samples].sort() : undefined,
+      from: range.from,
+      to: range.to,
+    },
+  };
 }
