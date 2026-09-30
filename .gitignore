@@ -11,10 +11,16 @@ htmlcov/
 build/
 dist/
 
-# Node (frontend, phase 2)
+# Node (frontend)
 node_modules/
 .next/
 out/
+coverage/
+*.tsbuildinfo
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
 
 # Env / secrets
 .env
