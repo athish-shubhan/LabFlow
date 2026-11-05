@@ -94,7 +94,7 @@ full running stack; the Vitest suite stubs `fetch` and runs offline:
 
 | Layer | Tool | Count | Run with |
 |---|---|---|---|
-| Backend | pytest | 39 tests | `cd backend && pytest` |
+| Backend | pytest | 48 tests | `cd backend && pytest` |
 | Frontend unit | Vitest | 83 tests | `cd frontend && npm test` |
 | End-to-end | Playwright | 4 tests | `cd frontend && npm run test:e2e` (stack must be running) |
 

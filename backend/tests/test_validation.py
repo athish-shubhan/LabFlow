@@ -104,3 +104,63 @@ def test_malformed_ids_are_422_not_500(client, tenant_headers):
     )
     assert bad_ids.status_code == 422
     assert bad_ids.json()["errors"][0]["field"] == "sample_ids"
+
+
+# Valid ISO 8601 with an offset, but outside year 1-9999 once converted to UTC.
+UTC_OVERFLOW = ["9999-12-31T23:59:59-14:00", "0001-01-01T00:00:00+10:00"]
+
+
+@pytest.mark.parametrize("timestamp", UTC_OVERFLOW)
+def test_measurement_timestamp_must_fit_in_utc(client, tenant_headers, timestamp):
+    tenant, headers = tenant_headers
+    payload = {"timestamp": timestamp, "metric": "ph", "value": 7.1, "unit": "pH"}
+    response = client.post(f"/api/samples/{tenant.sample.id}/measurements", headers=headers, json=payload)
+    assert response.status_code == 422
+    assert response.json()["errors"][0] == {
+        "location": "body",
+        "field": "timestamp",
+        "message": "timestamp is out of range once converted to UTC",
+    }
+
+
+def test_rejected_timestamp_leaves_reads_working(client, tenant_headers):
+    # Such a row used to be stored before the read-back failed, after which the sample's
+    # measurement list, the experiment's analytics and the org dashboard all returned 500.
+    tenant, headers = tenant_headers
+    payload = {"timestamp": UTC_OVERFLOW[0], "metric": "ph", "value": 7.1, "unit": "pH"}
+    client.post(f"/api/samples/{tenant.sample.id}/measurements", headers=headers, json=payload)
+    measurements = client.get(f"/api/samples/{tenant.sample.id}/measurements", headers=headers)
+    assert measurements.status_code == 200 and measurements.json()["total"] == 3
+    assert client.get(f"/api/experiments/{tenant.experiment.id}/analytics", headers=headers).status_code == 200
+    assert client.get(f"/api/organizations/{tenant.org.id}/dashboard", headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize("param", ["from", "to"])
+@pytest.mark.parametrize("timestamp", UTC_OVERFLOW)
+def test_date_filters_must_fit_in_utc(client, tenant_headers, param, timestamp):
+    tenant, headers = tenant_headers
+    for url in (
+        f"/api/samples/{tenant.sample.id}/measurements",
+        f"/api/experiments/{tenant.experiment.id}/analytics",
+    ):
+        response = client.get(url, headers=headers, params={param: timestamp})
+        assert response.status_code == 422, url
+        assert response.json()["errors"][0]["field"] == param
+
+
+def test_edge_of_range_timestamps_are_accepted(client, tenant_headers):
+    tenant, headers = tenant_headers
+    url = f"/api/samples/{tenant.sample.id}/measurements"
+    for timestamp in ("9999-12-31T23:59:59Z", "0001-01-01T00:00:00Z"):
+        payload = {"timestamp": timestamp, "metric": "ph", "value": 7.1, "unit": "pH"}
+        assert client.post(url, headers=headers, json=payload).status_code == 201
+    assert client.get(url, headers=headers).json()["total"] == 5
+
+
+def test_page_number_too_large_is_422_not_500(client, tenant_headers):
+    tenant, headers = tenant_headers
+    url = f"/api/samples/{tenant.sample.id}/measurements"
+    assert client.get(url, headers=headers, params={"page": 10**20}).status_code == 422
+    assert client.get(url, headers=headers, params={"page": 2**62, "page_size": 500}).status_code == 422
+    last = client.get(url, headers=headers, params={"page": 1_000_000, "page_size": 500})
+    assert last.status_code == 200 and last.json()["items"] == []

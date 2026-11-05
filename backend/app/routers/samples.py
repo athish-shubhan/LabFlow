@@ -2,16 +2,26 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, status
-from pydantic import AwareDatetime
 from sqlalchemy import func, select
 
 from app.deps import CurrentUser, DbSession
 from app.errors import FieldValidationError
 from app.models import Measurement, Sample
-from app.schemas import MeasurementCreate, MeasurementOut, MeasurementPage, MetricName, SampleOut, SampleUpdate
+from app.schemas import (
+    MeasurementCreate,
+    MeasurementOut,
+    MeasurementPage,
+    MetricName,
+    SampleOut,
+    SampleUpdate,
+    UtcDatetime,
+)
 from app.tenancy import get_sample, measurements_in_org
 
 router = APIRouter(prefix="/samples", tags=["samples"])
+
+# Keeps (page - 1) * page_size inside Postgres' bigint OFFSET; far beyond any real page count.
+MAX_PAGE = 1_000_000
 
 
 @router.get("/{sample_id}", response_model=SampleOut)
@@ -35,9 +45,9 @@ def list_measurements(
     user: CurrentUser,
     db: DbSession,
     metric: MetricName | None = None,
-    start: Annotated[AwareDatetime | None, Query(alias="from")] = None,
-    end: Annotated[AwareDatetime | None, Query(alias="to")] = None,
-    page: Annotated[int, Query(ge=1)] = 1,
+    start: Annotated[UtcDatetime | None, Query(alias="from")] = None,
+    end: Annotated[UtcDatetime | None, Query(alias="to")] = None,
+    page: Annotated[int, Query(ge=1, le=MAX_PAGE)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 50,
     order: Literal["asc", "desc"] = "asc",
 ) -> MeasurementPage:
