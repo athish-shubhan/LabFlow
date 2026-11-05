@@ -19,8 +19,11 @@ export function pageRange(page: number, pageSize: number, total: number): { star
   return { start: Math.min(start, total), end: Math.min(page * pageSize, total) };
 }
 
-/** Parse a ?page= value into a positive integer, defaulting to 1. */
+/** Highest page the backend accepts (MAX_PAGE in backend/app/routers/samples.py). */
+export const MAX_PAGE = 1_000_000;
+
+/** Parse a ?page= value into an integer in [1, MAX_PAGE], defaulting to 1. */
 export function parsePage(raw: string | null | undefined): number {
   const n = Number(raw);
-  return Number.isInteger(n) && n >= 1 ? n : 1;
+  return Number.isSafeInteger(n) && n >= 1 && n <= MAX_PAGE ? n : 1;
 }
