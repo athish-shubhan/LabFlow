@@ -1,6 +1,9 @@
-from fastapi import APIRouter, FastAPI
+import logging
+
+from fastapi import APIRouter, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import get_settings
 from app.db import engine
@@ -24,8 +27,13 @@ for module in (auth, organizations, projects, experiments, samples):
 app.include_router(api)
 
 
-@app.get("/health", tags=["meta"])
-def health() -> dict[str, str]:
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
+@app.get("/health", tags=["meta"], responses={503: {"description": "Database unreachable"}})
+def health(response: Response) -> dict[str, str]:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        logging.getLogger("labflow").warning("health check: database unreachable", exc_info=True)
+        response.status_code = 503
+        return {"status": "unavailable", "database": "unreachable"}
     return {"status": "ok"}

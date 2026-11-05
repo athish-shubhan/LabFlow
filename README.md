@@ -94,8 +94,8 @@ full running stack; the Vitest suite stubs `fetch` and runs offline:
 
 | Layer | Tool | Count | Run with |
 |---|---|---|---|
-| Backend | pytest | 48 tests | `cd backend && pytest` |
-| Frontend unit | Vitest | 83 tests | `cd frontend && npm test` |
+| Backend | pytest | 54 tests | `cd backend && pytest` |
+| Frontend unit | Vitest | 87 tests | `cd frontend && npm test` |
 | End-to-end | Playwright | 4 tests | `cd frontend && npm run test:e2e` (stack must be running) |
 
 Backend tests run against a real `labflow_test` database, migrated fresh with Alembic
@@ -169,6 +169,10 @@ cp .env.example .env
 
 docker compose up --build
 ```
+
+The backend refuses to start while `JWT_SECRET` is still the `.env.example` placeholder: that
+value is public, so anyone could sign a valid token with it. `GET /health` returns `503` when
+the database is unreachable, which is what the compose healthcheck polls.
 
 This starts Postgres, runs the Alembic migration, seeds the demo data (controlled by
 `SEED_DEMO_DATA` in `.env`), and starts the backend and frontend. Once all three

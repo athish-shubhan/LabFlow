@@ -148,3 +148,71 @@ branches, so no valid timestamp is newly rejected.
 
 `backend/app/schemas.py`, `backend/app/routers/samples.py`, `backend/app/routers/experiments.py`,
 `backend/tests/test_validation.py`, `README.md`, `IMPROVEMENTS.md`
+
+## Round 3 (2026-11-05): refuse the public placeholder JWT secret; 503 health check; page clamp
+
+Stacked on round 2 (`improve/round-2`).
+
+### What changed
+
+1. **The backend accepted the `.env.example` signing key.** Both `.env.example` files ship
+   `JWT_SECRET=replace-with-a-long-random-string-of-32-plus-chars`. That is 50 characters, so it passed
+   `Field(min_length=32)`. Someone who ran `cp .env.example .env && docker compose up` without editing it got
+   a server whose tokens anyone could forge from the public repo. The user's and org's UUIDs appear in URLs and
+   API responses. `Settings` now rejects that exact value with a message that gives the command to generate a
+   real one. The backend fails at startup instead of running insecurely. A test checks that both example files
+   still contain the value being refused, so the guard cannot silently drift out of sync with them.
+2. **`/health` returns 503 when the database is down.** Before, the exception reached the catch-all handler
+   and came back as a generic `500 {"detail": "Internal server error"}`. It now returns
+   `503 {"status": "unavailable", "database": "unreachable"}`, logged with the cause, and keeps the documented
+   200 response schema.
+3. **`parsePage` mirrors the backend's page bound.** The measurements table read `?page=` with
+   `Number.isInteger`, which accepts `1e300` and `9007199254740993`, and anything above round 2's
+   `MAX_PAGE = 1_000_000`. Those turned into a backend 422 and the error page. Values outside
+   [1, 1,000,000], or not a safe integer, now fall back to page 1, as other invalid values already did.
+
+### Why it matters
+
+A setup that is insecure by default, with a key the README itself publishes, is the kind of thing a reviewer
+spots first. A health endpoint that reports an outage as a server bug points people at the wrong layer.
+
+### How it was verified
+
+Backend: Postgres 16 locally, Python 3.14.6. Frontend: Node 22.
+
+The risk, reproduced on round 2's code with `JWT_SECRET` set to the placeholder: a token signed locally,
+without logging in, is accepted.
+
+```
+forged token with the .env.example secret -> 200 admin@org-ce4341e2.example.com
+```
+
+On this branch, with the same environment, the app refuses to import:
+
+```
+$ python -c "from app.main import app"
+  Value error, JWT_SECRET is still the placeholder from .env.example; generate one with python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+```
+$ ruff check . && ruff format --check . && python -m pytest -q     # backend
+All checks passed!
+27 files already formatted
+54 passed in 16.98s                                                # was 48
+
+$ npm test        # 83 -> 87
+$ npm run lint    # exit 0
+$ npm run typecheck   # exit 0
+```
+
+### Not verified
+
+- `docker compose up` with the placeholder was not run (no Docker daemon here). The startup failure was shown
+  by importing the app with that environment. Compose should report the backend as unhealthy, with the message
+  in `docker compose logs backend`.
+- Only the exact shipped placeholder is refused. Other weak secrets of 32 or more characters are still accepted.
+
+### Files touched
+
+`backend/app/config.py`, `backend/app/main.py`, `backend/tests/test_config_and_health.py` (new),
+`frontend/src/lib/pagination.ts`, `frontend/src/lib/pagination.test.ts`, `README.md`, `IMPROVEMENTS.md`
