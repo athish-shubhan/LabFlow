@@ -3,7 +3,6 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
-from pydantic import AwareDatetime
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DbSession
@@ -20,6 +19,7 @@ from app.schemas import (
     SampleOut,
     SeriesPoint,
     SeriesStats,
+    UtcDatetime,
 )
 from app.tenancy import get_experiment, measurements_in_org, samples_in_org
 
@@ -99,8 +99,8 @@ def experiment_analytics(
     db: DbSession,
     metric: MetricName | None = None,
     sample_ids: Annotated[str | None, Query(description="Comma-separated sample UUIDs")] = None,
-    start: Annotated[AwareDatetime | None, Query(alias="from")] = None,
-    end: Annotated[AwareDatetime | None, Query(alias="to")] = None,
+    start: Annotated[UtcDatetime | None, Query(alias="from")] = None,
+    end: Annotated[UtcDatetime | None, Query(alias="to")] = None,
 ) -> ExperimentAnalytics:
     """Measurement time series for an experiment, one series per (sample, metric, unit)."""
     experiment = get_experiment(db, experiment_id, user.org_id)

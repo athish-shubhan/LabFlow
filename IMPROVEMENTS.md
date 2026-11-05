@@ -84,3 +84,67 @@ $ node -e '... new URL(`http://backend:8000/${["api","..","openapi.json"].map(en
 `.github/workflows/ci.yml` (new), `frontend/src/lib/api/bff.ts` (new), `frontend/src/lib/api/bff.test.ts` (new),
 `frontend/src/app/bff/[...path]/route.ts`, `frontend/src/app/bff/[...path]/route.test.ts` (new), `README.md`,
 `IMPROVEMENTS.md` (new)
+
+## Round 2 (2026-11-05): one bad timestamp could break an organization's dashboard; page overflow
+
+Stacked on round 1 (`improve/round-1`).
+
+### What changed
+
+1. **A single measurement with an extreme UTC offset took down reads for the whole organization.**
+   `MeasurementCreate.timestamp` accepted any aware datetime. `9999-12-31T23:59:59-14:00` is valid ISO 8601,
+   but it is year 10000 in UTC. Postgres stores it, and then psycopg cannot read it back
+   (`timestamp too large (after year 10K)`). The POST returned 500 after the row was already committed. From
+   then on, the sample's measurement list, the experiment's analytics and the organization's dashboard all
+   returned 500 for every user in that org. `0001-01-01T00:00:00+10:00`, which is year 0 in UTC, failed the
+   same way. The new `UtcDatetime` type (`app/schemas.py`) rejects such values with a 422
+   (`"timestamp is out of range once converted to UTC"`). It is used for the measurement body and for the
+   `from`/`to` filters on `/samples/{id}/measurements` and `/experiments/{id}/analytics`, which also returned
+   500 for those values.
+2. **`?page=10**20` on the measurements list returned 500** (`bigint out of range` on OFFSET). `page` is now
+   capped at 1,000,000, so `(page - 1) * page_size` always fits, and anything larger gets a 422.
+
+### Why it matters
+
+The first bug let any member of an org break the dashboard for everyone in it with one ordinary-looking API
+call, and the fix needed a manual DB cleanup. The README's validation story ("malformed input is 422, not
+500") had gaps at the edges of the datetime and integer ranges.
+
+### How it was verified
+
+Postgres 16 running locally, Python 3.14.6.
+
+Reproduced on round 1's code before the fix:
+
+```
+before: list 200 analytics 200
+bad POST 500                                          # timestamp 9999-12-31T23:59:59-14:00
+after: list 500 analytics 500 dashboard 500
+measurements {'page': 100000000000000000000} 500 {"detail":"Internal server error"}
+```
+
+```
+$ ruff check . && ruff format --check . && python -m pytest -q    # backend
+All checks passed!
+26 files already formatted
+48 passed in 16.28s                                   # was 39
+
+$ npm test                                            # frontend, unchanged
+      Tests  83 passed (83)
+```
+
+The 9 new tests in `tests/test_validation.py` were also run on round 1's backend. 8 fail there. The ninth checks
+that `9999-12-31T23:59:59Z` and `0001-01-01T00:00:00Z` are still accepted and read back. It passes on both
+branches, so no valid timestamp is newly rejected.
+
+### Not verified
+
+- I did not check whether an existing database already holds out-of-range rows. Any such rows would still
+  break reads and would need a manual `DELETE`. The seed script only generates timestamps near the current
+  date, so seeded data is not affected.
+- Playwright was not run (no compose stack in this sandbox).
+
+### Files touched
+
+`backend/app/schemas.py`, `backend/app/routers/samples.py`, `backend/app/routers/experiments.py`,
+`backend/tests/test_validation.py`, `README.md`, `IMPROVEMENTS.md`
