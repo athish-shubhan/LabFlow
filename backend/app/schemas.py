@@ -1,9 +1,18 @@
 import math
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from app.models import ExperimentStatus, SampleStatus, UserRole
 
@@ -14,6 +23,24 @@ MetricName = Annotated[
     StringConstraints(strip_whitespace=True, to_lower=True, min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$"),
 ]
 Unit = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=32)]
+
+
+def _representable_in_utc(value: datetime) -> datetime:
+    """Reject aware datetimes that leave Python's year 1-9999 range once converted to UTC.
+
+    Postgres stores timestamptz in UTC and accepts such values, but psycopg cannot read
+    them back: 9999-12-31T23:59:59-14:00 is year 10000 in UTC. One stored row like that
+    made every later read of its sample, its experiment's analytics and the org dashboard fail.
+    """
+    try:
+        value.astimezone(UTC)
+    except OverflowError:
+        raise ValueError("timestamp is out of range once converted to UTC") from None
+    return value
+
+
+# Every timezone-aware datetime that reaches the database (body or query) uses this type.
+UtcDatetime = Annotated[AwareDatetime, AfterValidator(_representable_in_utc)]
 
 
 class ORMModel(BaseModel):
@@ -167,7 +194,7 @@ class SampleOut(ORMModel):
 
 
 class MeasurementCreate(InputModel):
-    timestamp: AwareDatetime
+    timestamp: UtcDatetime
     metric: MetricName
     value: float = Field(allow_inf_nan=False)
     unit: Unit
