@@ -37,7 +37,9 @@ client-side JavaScript never has access to it. When a Client Component needs dat
 (`browserApi` in `frontend/src/lib/api/browser.ts`), it calls `/bff/api/...` on the
 Next.js server itself; the route handler at `frontend/src/app/bff/[...path]/route.ts`
 reads the cookie, attaches `Authorization: Bearer <token>`, and forwards the request to
-the backend. This keeps the token out of the browser's JavaScript context while still
+the backend. It only forwards `/api/...` paths (`.` and `..` segments are rejected so a
+crafted path can't be normalised out of `/api`), and it gives the backend 15 seconds
+before answering `504`. This keeps the token out of the browser's JavaScript context while still
 letting client components own their own data fetching through TanStack Query.
 
 Server Components fetch with the token directly (`frontend/src/lib/api/server.ts`,
@@ -87,13 +89,13 @@ never the other org's data.
 
 ## Testing
 
-Three layers, all run against something real (a real Postgres database for pytest, a
-real backend for Vitest's API client tests, the full running stack for Playwright):
+Three layers. pytest runs against a real Postgres database and Playwright against the
+full running stack; the Vitest suite stubs `fetch` and runs offline:
 
 | Layer | Tool | Count | Run with |
 |---|---|---|---|
 | Backend | pytest | 39 tests | `cd backend && pytest` |
-| Frontend unit | Vitest | 69 tests | `cd frontend && npm test` |
+| Frontend unit | Vitest | 83 tests | `cd frontend && npm test` |
 | End-to-end | Playwright | 4 tests | `cd frontend && npm run test:e2e` (stack must be running) |
 
 Backend tests run against a real `labflow_test` database, migrated fresh with Alembic
@@ -106,6 +108,11 @@ BFF path a real user's browser would use, and cover:
 - **Failure paths:** wrong password shows an error and sets no session cookie; an
   empty required field is rejected client-side before any request is sent; guessing
   another organization's project ID by URL returns not-found.
+
+CI (`.github/workflows/ci.yml`) runs on every push and pull request: Ruff (lint and
+format check) and pytest against a Postgres 17 service container for the backend, and
+ESLint, `tsc`, Vitest and `next build` for the frontend. Playwright needs the whole
+compose stack and is not part of CI.
 
 ## Performance
 

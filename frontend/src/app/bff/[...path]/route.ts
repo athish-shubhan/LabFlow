@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { BFF_TIMEOUT_MS, backendTarget } from "@/lib/api/bff";
 import { backendUrl } from "@/lib/api/server";
 import { SESSION_COOKIE } from "@/lib/auth/token";
 
@@ -7,7 +8,8 @@ import { SESSION_COOKIE } from "@/lib/auth/token";
 
 async function forward(request: NextRequest, { params }: RouteContext<"/bff/[...path]">) {
   const { path } = await params;
-  if (path[0] !== "api") {
+  const target = backendTarget(backendUrl(), path, request.nextUrl.search);
+  if (!target) {
     return NextResponse.json({ detail: "Not found" }, { status: 404 });
   }
 
@@ -15,9 +17,6 @@ async function forward(request: NextRequest, { params }: RouteContext<"/bff/[...
   if (!token) {
     return NextResponse.json({ detail: "Not authenticated" }, { status: 401 });
   }
-
-  const target = new URL(`${backendUrl()}/${path.map(encodeURIComponent).join("/")}`);
-  target.search = request.nextUrl.search;
 
   const headers = new Headers({ Authorization: `Bearer ${token}`, Accept: "application/json" });
   const contentType = request.headers.get("content-type");
@@ -31,8 +30,12 @@ async function forward(request: NextRequest, { params }: RouteContext<"/bff/[...
       headers,
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
+      signal: AbortSignal.timeout(BFF_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      return NextResponse.json({ detail: "The LabFlow API did not respond in time." }, { status: 504 });
+    }
     return NextResponse.json({ detail: "The LabFlow API is unreachable." }, { status: 502 });
   }
 
