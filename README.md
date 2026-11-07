@@ -24,6 +24,14 @@ pytest, Ruff.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    Browser -->|"page request / TanStack Query"| Next["Next.js server<br/>(Server Components + /bff proxy)"]
+    Next -->|"Bearer JWT from httpOnly cookie"| API["FastAPI backend"]
+    API --> PG[("PostgreSQL<br/>measurements + per-minute rollups")]
+    API -.->|"analytics?width=1200: min/max per bucket"| Next
+```
+
 Three containers: `postgres`, `backend`, `frontend`. The backend is a normal FastAPI
 REST API; it doesn't know the frontend exists. The frontend is a Next.js server that
 does two things at once: it renders pages (Server Components fetch directly from the
@@ -116,36 +124,54 @@ compose stack and is not part of CI.
 
 ## Performance
 
-Measured on a development machine (Apple Silicon, Docker via Colima) against the
-compose stack, not a production deployment, and not a claim about behavior under load.
-Reproduce with `curl -w "%{time_total}"` for the API numbers, or a Playwright script
-using `performance.getEntriesByType("navigation")` for the page numbers.
+The expensive path is the experiment analytics endpoint: one chart can span hundreds of
+thousands of readings. Changes on this branch:
 
-Backend, warm (after the first request):
+- Composite time indexes on `measurements` (migration `0002`).
+- Per-minute rollups (`measurement_rollups`) maintained by a statement-level trigger (migration `0003`).
+- `GET /api/experiments/{id}/analytics?width=N` splits each series into `N` time buckets and
+  returns the lowest and highest reading of each (at most `2 x N` points per series), computed in
+  SQL (`backend/app/analytics.py`). The frontend requests `width=1200` for charts.
+- The analytics queries read `measurements` by `sample_id` directly (the experiment was already
+  resolved through the org-scoped lookup) instead of joining every row back up to `projects.org_id`.
 
-| Endpoint | Typical response time |
-|---|---|
-| `POST /api/auth/login` | ~390ms (bcrypt verification is deliberately slow) |
-| `GET /.../dashboard` | ~20ms |
-| `GET /.../projects` | ~6ms |
-| `GET /experiments/{id}/analytics` | ~8ms (single experiment, hundreds of points) |
+### Results
 
-Frontend, full page navigation (server render + hydration), signed in:
+Dataset: 1 experiment, 4 samples x 2 metrics x 50,000 readings = **400,000 measurements** (`bench.seed_scale --points 50000`).
+Latency is sequential HTTP requests to a running uvicorn (12 repeats for light cases, 3 for analytics; one warm-up),
+p50 / p95 in ms; payload is the JSON response body. Environment: Apple M1, 8 GiB, macOS 26.2, Python 3.14.8,
+PostgreSQL 16.2 on the same machine (no Docker), **machine not idle (load average 3-5)**, so treat absolute numbers as noisy.
+Before = `main` (9ffa4ef); after = this branch with `width=1200`. Run 1 shown; run 2 is in the same directory and agrees in direction
+(for example whole experiment 4337 ms -> 824 ms).
 
-| Page | TTFB | DOMContentLoaded | Transfer size |
-|---|---|---|---|
-| Dashboard | ~70ms | ~290ms | ~16KB |
-| Projects list | ~85ms | ~125ms | ~9KB |
-| Project detail | ~160ms | ~180ms | ~12KB |
+| Case | Before p50 / p95 | Before payload | After p50 / p95 | After payload |
+|---|---|---|---|---|
+| dashboard | 189 / 190 | 3.9 KiB | 52 / 53 | 3.9 KiB |
+| samples list (with counts) | 109 / 110 | 0.9 KiB | 42 / 44 | 0.9 KiB |
+| measurements page 1 | 82 / 84 | 9.5 KiB | 26 / 27 | 9.5 KiB |
+| analytics, 1 series (50k points) | 522 / 555 | 3,087 KiB | 93 / 105 | 149 KiB |
+| analytics, 1 metric, 4 samples | 1,735 / 1,771 | 12,347 KiB | 520 / 556 | 594 KiB |
+| analytics, whole experiment | 3,774 / 3,906 | 24,787 KiB | 688 / 856 | 1,192 KiB |
 
-Client-side JS is code-split per route by Next.js; the largest chunks are the
-Recharts/analytics bundle and the shared framework chunk, loaded only on pages that
-need them. The dashboard and projects list don't load the charting library at all.
+Payload shrinks about 21x for the 50k-point series because the response is capped at 2400 points per series.
+Without `width` the branch still reads faster than `main` but returns full resolution (`after-nowidth-50k.json`:
+whole experiment 3,548 ms, 24,787 KiB), so most of the latency win on the largest case comes from downsampling.
+Larger scales (125,000 readings per series, from an earlier run on a different laptop, environment not recorded) are
+kept under `backend/bench/results/` but not quoted because those runs disagreed with each other by 2-3x.
+Not measured: browser render time, concurrent load, Docker Compose, Postgres 17 (the compose stack's version).
 
-On the data side, the analytics endpoint accepts `metric`, `sample_ids`, `from`, and
-`to` filters so the frontend never has to pull an experiment's full measurement history
-to render one chart, and the measurements table is paginated server-side rather than
-fetched in full.
+### Reproduce
+
+```bash
+cd backend
+# DATABASE_URL pointing at a migrated database (alembic upgrade head)
+python -m bench.seed_scale --points 50000 --reset      # bench@labflow.dev / labflow-demo
+uvicorn app.main:app --port 8000 &
+python -m bench.bench_api --label after --query width=1200 --note "my machine"
+```
+
+For the "before" numbers, check out `main`, copy `backend/bench/` over, migrate a separate database, seed the same way and run
+`bench_api` without `--query`. Each result JSON stores its command and environment. See `backend/bench/results/README.md`.
 
 ## Data model
 
@@ -200,6 +226,19 @@ Re-run the seed against a running stack with:
 docker compose exec backend python -m scripts.seed --reset
 ```
 
+### Large-data demo
+
+To see an experiment with many measurements load quickly (800,000 readings by default):
+
+```bash
+./demo.sh        # generates .env if missing, docker compose up --build -d --wait, loads the bench tenant
+```
+
+Then open http://localhost:3000, sign in as `bench@labflow.dev` / `labflow-demo`, open the project's
+experiment and its Analytics tab. `POINTS=25000 ./demo.sh` uses a smaller set. On an 8 GB Mac keep Docker's memory
+limit around 3-4 GB. The demo script has not been run inside Docker by the author of this change (no container
+runtime was available); the same data load was exercised against a local PostgreSQL.
+
 ### Running tests
 
 ```bash
@@ -241,5 +280,12 @@ This is a portfolio-scale project, not a production system. Deliberately out of 
   keeps the UI current, not a websocket or polling.
 - The JWT has no refresh flow: it's a 12-hour token, and expiry redirects to login.
 - Measurement ingestion is a single-row `POST`; there's no bulk/CSV import.
+- Downsampling keeps each bucket's min and max, so charts show extremes faithfully but not every point.
+- Rollups are maintained by an insert trigger; updates and deletes of measurements are not reflected in them.
+- Benchmarks are single-client, on one machine, on a non-idle laptop; see the Performance section.
 - Seed data is synthetic and small enough to run comfortably in a laptop-sized
   Postgres instance; it isn't representative of production data volumes.
+
+## Demo
+
+<!-- DEMO -->
