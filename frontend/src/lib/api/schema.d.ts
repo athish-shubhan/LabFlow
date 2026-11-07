@@ -172,6 +172,12 @@ export interface paths {
         /**
          * Experiment Analytics
          * @description Measurement time series for an experiment, one series per (sample, metric, unit).
+         *
+         *     With `width` (roughly the chart's pixel width), each series is split into `width`
+         *     equal time buckets and each bucket keeps its minimum and maximum reading, so spikes
+         *     survive while the payload stays bounded regardless of how many readings are stored.
+         *     Buckets with two or fewer readings keep them all, so sparse series are unchanged.
+         *     `stats` always covers every reading in range.
          */
         get: operations["experiment_analytics_api_experiments__experiment_id__analytics_get"];
         put?: never;
@@ -1128,6 +1134,8 @@ export interface operations {
                 sample_ids?: string | null;
                 from?: string | null;
                 to?: string | null;
+                /** @description Downsample each series to at most 2 x width points */
+                width?: number | null;
             };
             header?: never;
             path: {
@@ -1315,6 +1323,13 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Database unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

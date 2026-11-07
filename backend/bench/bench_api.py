@@ -12,7 +12,11 @@ bench/results/<label>.json so before/after runs can be compared.
 
 import argparse
 import json
+import os
+import platform
 import statistics
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -49,11 +53,28 @@ def run_case(client: httpx.Client, name: str, method: str, url: str, repeat: int
     return result
 
 
+def environment() -> dict:
+    def sh(*cmd: str) -> str:
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout.strip()
+        except OSError, subprocess.SubprocessError:
+            return "unknown"
+
+    env = {"os": platform.platform(), "python": platform.python_version(), "load_avg_at_start": os.getloadavg()}
+    if sys.platform == "darwin":
+        env["cpu"] = sh("sysctl", "-n", "machdep.cpu.brand_string")
+        env["ram_gib"] = round(int(sh("sysctl", "-n", "hw.memsize") or 0) / 2**30, 1)
+    return env
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--label", required=True, help="name for bench/results/<label>.json")
     parser.add_argument("--repeat", type=int, default=20)
+    parser.add_argument(
+        "--note", default="", help="free text stored in the result, e.g. the Postgres version and code under test"
+    )
     parser.add_argument("--query", action="append", default=[], help="extra analytics query param, e.g. width=1200")
     args = parser.parse_args()
 
@@ -108,7 +129,18 @@ def main() -> None:
     RESULTS.mkdir(exist_ok=True)
     out = RESULTS / f"{args.label}.json"
     out.write_text(
-        json.dumps({"series_points": series_points, "samples": len(samples), "results": results}, indent=2) + "\n"
+        json.dumps(
+            {
+                "command": " ".join(["python", "-m", "bench.bench_api", *sys.argv[1:]]),
+                "environment": environment(),
+                "note": args.note,
+                "series_points": series_points,
+                "samples": len(samples),
+                "results": results,
+            },
+            indent=2,
+        )
+        + "\n"
     )
     print(f"\nwrote {out.relative_to(Path.cwd()) if out.is_relative_to(Path.cwd()) else out}")
 

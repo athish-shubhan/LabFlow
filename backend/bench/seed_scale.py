@@ -15,7 +15,7 @@ import uuid
 
 from sqlalchemy import delete, select, text
 
-from app.db import SessionLocal
+from app.db import SessionLocal, engine
 from app.models import Experiment, ExperimentStatus, Organization, Project, Sample, SampleStatus, User, UserRole
 from app.security import hash_password
 from scripts.seed import DEMO_PASSWORD
@@ -93,7 +93,7 @@ def seed(points: int, samples: int, interval_s: float, reset: bool) -> None:
         print(f"experiment {experiment.id}: {rows:,} rows in {time.perf_counter() - start:.1f}s")
     # VACUUM (not just ANALYZE) sets the visibility map, which index-only count scans rely on;
     # it can't run inside a transaction block.
-    with SessionLocal().connection().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         conn.execute(text("VACUUM ANALYZE measurements"))
 
 

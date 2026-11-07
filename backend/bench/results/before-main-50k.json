@@ -1,0 +1,68 @@
+{
+  "command": "python -m bench.bench_api --base-url http://localhost:8001 --label before-main-50k --repeat 12 --note code: main @9ffa4ef (no 0002/0003, no downsampling); Postgres 16.2 (pgserver, shared_buffers=128MB), local, 400k rows",
+  "environment": {
+    "os": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.8",
+    "load_avg_at_start": [
+      4.15966796875,
+      9.09619140625,
+      20.4921875
+    ],
+    "cpu": "Apple M1",
+    "ram_gib": 8.0
+  },
+  "note": "code: main @9ffa4ef (no 0002/0003, no downsampling); Postgres 16.2 (pgserver, shared_buffers=128MB), local, 400k rows",
+  "series_points": 50000,
+  "samples": 4,
+  "results": [
+    {
+      "case": "dashboard",
+      "p50_ms": 189.4,
+      "p95_ms": 190.4,
+      "bytes": 4008,
+      "repeat": 12
+    },
+    {
+      "case": "samples list (with counts)",
+      "p50_ms": 108.7,
+      "p95_ms": 109.7,
+      "bytes": 901,
+      "repeat": 12
+    },
+    {
+      "case": "measurements page 1",
+      "p50_ms": 82.3,
+      "p95_ms": 84.2,
+      "bytes": 9717,
+      "repeat": 12
+    },
+    {
+      "case": "measurements page 2000 (OFFSET 99,950)",
+      "p50_ms": 156.7,
+      "p95_ms": 185.1,
+      "bytes": 9719,
+      "repeat": 12
+    },
+    {
+      "case": "analytics: 1 series",
+      "p50_ms": 522.2,
+      "p95_ms": 555.0,
+      "bytes": 3160789,
+      "repeat": 3
+    },
+    {
+      "case": "analytics: 1 metric, all samples",
+      "p50_ms": 1734.8,
+      "p95_ms": 1771.0,
+      "bytes": 12643260,
+      "repeat": 3
+    },
+    {
+      "case": "analytics: whole experiment",
+      "p50_ms": 3774.4,
+      "p95_ms": 3906.4,
+      "bytes": 25382156,
+      "repeat": 3
+    }
+  ]
+}
