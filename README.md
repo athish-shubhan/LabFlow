@@ -288,4 +288,6 @@ This is a portfolio-scale project, not a production system. Deliberately out of 
 
 ## Demo
 
-<!-- DEMO -->
+![Demo](docs/demo.gif)
+
+*Sign in to the large demo tenant (400,000 measurements), open the experiment's Analytics tab: each series is downsampled server-side (min/max buckets) so the charts load 19,200 points instead of 400,000.*
