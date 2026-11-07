@@ -141,7 +141,11 @@ class Sample(Base):
 
 class Measurement(Base):
     __tablename__ = "measurements"
-    __table_args__ = (Index("ix_measurements_sample_metric_ts", "sample_id", "metric", "timestamp"),)
+    __table_args__ = (
+        Index("ix_measurements_sample_metric_ts", "sample_id", "metric", "timestamp"),
+        Index("ix_measurements_sample_ts", "sample_id", "timestamp", "id"),
+        Index("ix_measurements_timestamp", "timestamp"),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     sample_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("samples.id", ondelete="CASCADE"))
@@ -149,6 +153,24 @@ class Measurement(Base):
     metric: Mapped[str] = mapped_column(String(64))
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32))
+
+
+class MeasurementRollup(Base):
+    """Per-minute aggregate of one series, maintained by a trigger on measurements
+    (migration 0003); never written by application code."""
+
+    __tablename__ = "measurement_rollups"
+
+    sample_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("samples.id", ondelete="CASCADE"), primary_key=True)
+    metric: Mapped[str] = mapped_column(String(64), primary_key=True)
+    unit: Mapped[str] = mapped_column(String(32), primary_key=True)
+    minute: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    n: Mapped[int]
+    total: Mapped[float] = mapped_column(Float)
+    min: Mapped[float] = mapped_column(Float)
+    min_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    max: Mapped[float] = mapped_column(Float)
+    max_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 # Child counts exposed on list/detail responses, computed in the same SELECT.
@@ -164,9 +186,7 @@ Experiment.sample_count = column_property(
     .correlate_except(Sample)
     .scalar_subquery()
 )
+# count(*) rather than count(id) so Postgres can answer from the sample_id index alone.
 Sample.measurement_count = column_property(
-    select(func.count(Measurement.id))
-    .where(Measurement.sample_id == Sample.id)
-    .correlate_except(Measurement)
-    .scalar_subquery()
+    select(func.count()).where(Measurement.sample_id == Sample.id).correlate_except(Measurement).scalar_subquery()
 )

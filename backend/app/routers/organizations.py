@@ -65,9 +65,11 @@ def get_dashboard(org_id: uuid.UUID, user: CurrentUser, db: DbSession) -> Dashbo
         experiments_by_status=experiments_by_status,
         sample_count=sum(samples_by_status.values()),
         samples_by_status=samples_by_status,
-        measurement_count=count(measurements_in_org(org_id).with_only_columns(Measurement.id)),
+        measurement_count=count(measurements_in_org(org_id).with_only_columns(Measurement.sample_id)),
         measurements_last_7_days=count(
-            measurements_in_org(org_id).with_only_columns(Measurement.id).where(Measurement.timestamp >= week_ago)
+            measurements_in_org(org_id)
+            .with_only_columns(Measurement.sample_id)
+            .where(Measurement.timestamp >= week_ago)
         ),
         recent_experiments=[
             RecentExperiment(

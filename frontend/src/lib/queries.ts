@@ -26,6 +26,11 @@ export interface AnalyticsFilters {
   to?: string;
 }
 
+// The backend reduces each series to at most 2x this many points (min and max per time
+// bucket), about one bucket per horizontal pixel of the widest chart, so a series with
+// hundreds of thousands of readings still renders from a payload of a few thousand points.
+export const CHART_POINT_BUCKETS = 1200;
+
 export interface MeasurementFilters {
   metric?: string;
   from?: string;
@@ -89,6 +94,7 @@ export const queries = {
                 sample_ids: filters.sampleIds?.length ? filters.sampleIds.join(",") : undefined,
                 from: filters.from,
                 to: filters.to,
+                width: CHART_POINT_BUCKETS,
               },
             },
           }),

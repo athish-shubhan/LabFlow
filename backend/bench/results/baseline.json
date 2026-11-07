@@ -1,0 +1,55 @@
+{
+  "series_points": 125000,
+  "samples": 4,
+  "results": [
+    {
+      "case": "dashboard",
+      "p50_ms": 17685.9,
+      "p95_ms": 25160.1,
+      "bytes": 4021,
+      "repeat": 12
+    },
+    {
+      "case": "samples list (with counts)",
+      "p50_ms": 11124.8,
+      "p95_ms": 16203.1,
+      "bytes": 901,
+      "repeat": 12
+    },
+    {
+      "case": "measurements page 1",
+      "p50_ms": 7258.6,
+      "p95_ms": 17725.6,
+      "bytes": 9717,
+      "repeat": 12
+    },
+    {
+      "case": "measurements page 2000 (OFFSET 99,950)",
+      "p50_ms": 4584.4,
+      "p95_ms": 5866.6,
+      "bytes": 9713,
+      "repeat": 12
+    },
+    {
+      "case": "analytics: 1 series",
+      "p50_ms": 2803.2,
+      "p95_ms": 5216.0,
+      "bytes": 7901553,
+      "repeat": 3
+    },
+    {
+      "case": "analytics: 1 metric, all samples",
+      "p50_ms": 14828.3,
+      "p95_ms": 22234.9,
+      "bytes": 31606310,
+      "repeat": 3
+    },
+    {
+      "case": "analytics: whole experiment",
+      "p50_ms": 22513.5,
+      "p95_ms": 22866.4,
+      "bytes": 63452555,
+      "repeat": 3
+    }
+  ]
+}

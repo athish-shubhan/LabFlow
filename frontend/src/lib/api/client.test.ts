@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { queries } from "@/lib/queries";
+import { CHART_POINT_BUCKETS, queries } from "@/lib/queries";
 import { ApiError, createApiClient, toApiError, unwrap } from "./client";
 
 function jsonResponse(status: number, body: unknown) {
@@ -102,6 +102,7 @@ describe("query functions", () => {
     expect(url.searchParams.get("sample_ids")).toBe("a,b");
     expect(url.searchParams.get("from")).toBe("2026-09-24T18:30:00.000Z");
     expect(url.searchParams.has("to")).toBe(false);
+    expect(url.searchParams.get("width")).toBe(String(CHART_POINT_BUCKETS));
     expect(options.queryKey).toEqual(["experiment", "e1", "analytics", { metric: "yield", sampleIds: ["a", "b"], from: "2026-09-24T18:30:00.000Z" }]);
   });
 
