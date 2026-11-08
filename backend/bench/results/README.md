@@ -17,3 +17,7 @@ Docker Compose was not used for these runs (no container runtime was available).
 
 Note: the case labelled "measurements page 2000 (OFFSET 99,950)" is only meaningful at 125,000+ readings per series;
 at 50,000 per series the page is out of range and the endpoint clamps it, so it is not an OFFSET test here.
+
+The `9ffa4ef` hash named in the "before" files does not exist in this repository's history (it predates a rebase); the commit before the
+performance work is `1f7e94b`. The `load_avg_at_start` field in each file holds the 1-, 5- and 15-minute load averages; the 5- and 15-minute
+values (7-9 and 18-20) show the machine had been heavily loaded for a while before each run.

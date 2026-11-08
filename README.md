@@ -102,7 +102,7 @@ full running stack; the Vitest suite stubs `fetch` and runs offline:
 
 | Layer | Tool | Count | Run with |
 |---|---|---|---|
-| Backend | pytest | 54 tests | `cd backend && pytest` |
+| Backend | pytest | 57 tests | `cd backend && pytest` |
 | Frontend unit | Vitest | 87 tests | `cd frontend && npm test` |
 | End-to-end | Playwright | 4 tests | `cd frontend && npm run test:e2e` (stack must be running) |
 
@@ -119,13 +119,13 @@ BFF path a real user's browser would use, and cover:
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request: Ruff (lint and
 format check) and pytest against a Postgres 17 service container for the backend, and
-ESLint, `tsc`, Vitest and `next build` for the frontend. Playwright needs the whole
-compose stack and is not part of CI.
+ESLint, `tsc`, Vitest and `next build` for the frontend. A separate `e2e` job brings up the compose
+stack on the runner and runs the Playwright suite against it.
 
 ## Performance
 
 The expensive path is the experiment analytics endpoint: one chart can span hundreds of
-thousands of readings. Changes on this branch:
+thousands of readings. Changes (commit `008b713`):
 
 - Composite time indexes on `measurements` (migration `0002`).
 - Per-minute rollups (`measurement_rollups`) maintained by a statement-level trigger (migration `0003`).
@@ -140,9 +140,13 @@ thousands of readings. Changes on this branch:
 Dataset: 1 experiment, 4 samples x 2 metrics x 50,000 readings = **400,000 measurements** (`bench.seed_scale --points 50000`).
 Latency is sequential HTTP requests to a running uvicorn (12 repeats for light cases, 3 for analytics; one warm-up),
 p50 / p95 in ms; payload is the JSON response body. Environment: Apple M1, 8 GiB, macOS 26.2, Python 3.14.8,
-PostgreSQL 16.2 on the same machine (no Docker), **machine not idle (load average 3-5)**, so treat absolute numbers as noisy.
-Before = `main` (9ffa4ef); after = this branch with `width=1200`. Run 1 shown; run 2 is in the same directory and agrees in direction
-(for example whole experiment 4337 ms -> 824 ms).
+PostgreSQL 16.2 on the same machine (no Docker), **machine not idle**: the 1-minute load average at the start of each run was 3-5, but the 5- and 15-minute
+averages recorded in the result files were 7-9 and 18-20 (other jobs were running), so treat absolute numbers as noisy.
+Before = the code before `008b713` (the result files call it `main @9ffa4ef`; that hash is not in this repository's
+history, whose parent of `008b713` is `1f7e94b`); after = `008b713` with `width=1200`. With only 3 repeats, "p95" for the analytics rows is
+effectively the slowest of three runs. Run 1 shown; run 2 is in the same directory and agrees in direction
+(for example whole experiment 4337 ms -> 824 ms). The "after" analytics latencies moved by up to 2.3x between the two
+runs (1 metric, 4 samples: 520 ms in run 1, 223 ms in run 2), so read the speedups as an order of magnitude, not as exact ratios.
 
 | Case | Before p50 / p95 | Before payload | After p50 / p95 | After payload |
 |---|---|---|---|---|
@@ -272,7 +276,9 @@ API_SCHEMA_URL=http://localhost:8000/openapi.json npm run gen:api
 
 This is a portfolio-scale project, not a production system. Deliberately out of scope:
 
-- No rate limiting or brute-force protection on login.
+- Login throttling is minimal: failed sign-ins are counted per client address and email in process memory
+  (10 failures per 15 minutes, then `429`). It is not shared across workers or replicas, and there is no
+  limit on other endpoints.
 - No email verification, password reset, or account recovery flow.
 - No role-based permission checks beyond org membership (`admin` vs `member` is stored
   but not yet enforced anywhere).
