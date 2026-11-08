@@ -63,6 +63,9 @@ def migrated_database():
 
 @pytest.fixture(autouse=True)
 def clean_tables():
+    from app.ratelimit import login_throttle
+
+    login_throttle.reset()
     yield
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE organizations, users, projects, experiments, samples, measurements CASCADE"))

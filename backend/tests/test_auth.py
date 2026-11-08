@@ -36,3 +36,39 @@ def test_organizations_lists_only_own_org(client, make_tenant):
     response = client.get("/api/organizations", headers=login(client, tenant.user.email))
     assert response.status_code == 200
     assert [o["slug"] for o in response.json()] == ["acme"]
+
+
+def test_login_is_throttled_after_repeated_failures(client, make_tenant):
+    from app.ratelimit import login_throttle
+
+    make_tenant("acme")
+    login_throttle.reset()
+    bad = {"email": "admin@acme.example.com", "password": "nope"}
+    for _ in range(login_throttle.max_failures):
+        assert client.post("/api/auth/login", json=bad).status_code == 401
+
+    blocked = client.post("/api/auth/login", json=bad)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    # Even the right password is refused while blocked; another account is unaffected.
+    assert client.post("/api/auth/login", json={**bad, "password": PASSWORD}).status_code == 429
+    assert client.post("/api/auth/login", json={"email": "x@acme.example.com", "password": "nope"}).status_code == 401
+    login_throttle.reset()
+
+
+def test_login_throttle_window_expires_and_success_resets():
+    from app.ratelimit import LoginThrottle
+
+    now = [0.0]
+    throttle = LoginThrottle(max_failures=2, window=60, clock=lambda: now[0])
+    key = ("1.2.3.4", "a@example.com")
+    throttle.record_failure(key)
+    throttle.record_failure(key)
+    assert throttle.retry_after(key) is not None
+    now[0] = 61
+    assert throttle.retry_after(key) is None
+
+    throttle.record_failure(key)
+    throttle.reset(key)
+    throttle.record_failure(key)
+    assert throttle.retry_after(key) is None
